@@ -10,6 +10,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+//go:embed promt.txt
 var systemPromt string
 
 type Agent struct {
@@ -29,11 +30,18 @@ func New(apiKey, baseURL string, db *sql.DB, rdb *redis.Client) *Agent {
 }
 
 func (a *Agent) ProcessUserMessage(userID int64, text string) string {
+	if text == "" {
+		return "Пожалуйста, отправьте текстовый запрос."
+	}
+
+	if systemPromt == "" {
+		log.Println("⚠️ ВНИМАНИЕ: системный промпт пустой! Убедитесь, что prompt.txt не пуст и лежит в одной папке с agent.go")
+	}
 
 	resp, err := a.aiClient.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
-			Model: openai.GPT4oMini,
+			Model: "openai/gpt-5.4-nano",
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleSystem,
