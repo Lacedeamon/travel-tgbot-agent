@@ -3,11 +3,14 @@ package agent
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"log"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/sashabaranov/go-openai"
 )
+
+var systemPromt string
 
 type Agent struct {
 	aiClient *openai.Client
@@ -34,7 +37,7 @@ func (a *Agent) ProcessUserMessage(userID int64, text string) string {
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleSystem,
-					Content: "Ты полезный AI-турагент. Не галлюцинируй и перепроверяй свои ответы.",
+					Content: systemPromt,
 				},
 				{
 					Role:    openai.ChatMessageRoleUser,
