@@ -2,6 +2,7 @@ package bot
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/ostrovok-hackathon-2026/mr-robot/internal/agent"
@@ -21,22 +22,97 @@ func Start(token string, aiAgent *agent.Agent) {
 	}
 
 	b.Handle("/start", func(c tele.Context) error {
-		return c.Send("Привет! Я AI-агент Островка. Куда бы вы хотели отправиться?")
+		return c.Send("Привет! Я AI-агент Островка. 🌴\nРасскажи, куда бы ты хотел отправиться, или введи /help.")
+	})
+
+	b.Handle("/help", func(c tele.Context) error {
+		helpText := "<b>Как со мной общаться:</b>\n\n" +
+			"Просто напиши мне своими словами, куда хочешь поехать, какой бюджет и кто едет. " +
+			"Например: <i>«Хочу в Сочи на неделю вдвоем, бюджет 100 тысяч»</i>.\n\n" +
+			"/reset — очистить историю диалога и начать заново."
+		return c.Send(helpText, &tele.SendOptions{ParseMode: tele.ModeHTML})
+	})
+
+	b.Handle("/reset", func(c tele.Context) error {
+		userID := c.Chat().ID
+		aiAgent.ClearHistory(userID)
+		aiAgent.ClearCart(userID) // Добавили очистку корзины
+
+		return c.Send("🗑 <i>Ваша корзина и история диалога очищены.</i> Начнем заново!", &tele.SendOptions{ParseMode: tele.ModeHTML})
+	})
+	b.Handle("/checkout", func(c tele.Context) error {
+		// Временный хак для теста: принудительно кладем фейковый отель в корзину перед чекаутом
+		aiAgent.UpdateCart(c.Chat().ID, &agent.TripCart{
+			City:       "Сочи",
+			Dates:      "15.08 - 22.08",
+			Guests:     2,
+			HotelName:  "Radisson Collection Paradise",
+			TotalPrice: 125000,
+			Status:     "ready",
+		})
+
+		// Вызываем генерацию чека
+		reply := aiAgent.Checkout(c.Chat().ID)
+		return c.Send(reply, &tele.SendOptions{ParseMode: tele.ModeHTML, DisableWebPagePreview: true})
 	})
 
 	b.Handle(tele.OnText, func(c tele.Context) error {
 		c.Notify(tele.Typing)
 
-		// Передаем сообщение и ID пользователя агенту
 		reply := aiAgent.ProcessUserMessage(c.Chat().ID, c.Text())
+		reply = strings.ReplaceAll(reply, "<p>", "")
+		reply = strings.ReplaceAll(reply, "</p>", "\n")
+		reply = strings.ReplaceAll(reply, "<br>", "\n")
+		reply = strings.ReplaceAll(reply, "<br/>", "\n")
+		reply = strings.ReplaceAll(reply, "<strong>", "<b>")
+		reply = strings.ReplaceAll(reply, "</strong>", "</b>")
+		chunks := splitMessage(reply, 4000)
 
-		if len(reply) > 3900 {
-			reply = reply[:3900] + "...\n[Ответ обрезан]"
+		for _, chunk := range chunks {
+			err := c.Send(chunk, &tele.SendOptions{ParseMode: tele.ModeHTML})
+			if err != nil {
+				log.Printf("Ошибка отправки сообщения (возможно, кривой HTML от LLM): %v", err)
+				c.Send(chunk)
+			}
 		}
-
-		return c.Send(reply)
+		return nil
 	})
 
-	log.Println("Telegram-бот запущен")
+	b.SetCommands([]tele.Command{
+		{Text: "start", Description: "Начать общение"},
+		{Text: "help", Description: "Справка"},
+		{Text: "reset", Description: "Очистить контекст и корзину"},
+		{Text: "checkout", Description: "Загрузить готовое решение"},
+	})
+
+	log.Println("🤖 Telegram-бот запущен и готов к работе")
 	b.Start()
+}
+
+func splitMessage(text string, limit int) []string {
+	if len([]rune(text)) <= limit {
+		return []string{text}
+	}
+
+	var chunks []string
+	paragraphs := strings.Split(text, "\n")
+	var currentChunk string
+
+	for _, p := range paragraphs {
+		if len([]rune(currentChunk+p+"\n")) > limit {
+			if currentChunk != "" {
+				chunks = append(chunks, strings.TrimSpace(currentChunk))
+				currentChunk = p + "\n"
+			} else {
+				chunks = append(chunks, string([]rune(p)[:limit]))
+				currentChunk = string([]rune(p)[limit:]) + "\n"
+			}
+		} else {
+			currentChunk += p + "\n"
+		}
+	}
+	if currentChunk != "" {
+		chunks = append(chunks, strings.TrimSpace(currentChunk))
+	}
+	return chunks
 }
