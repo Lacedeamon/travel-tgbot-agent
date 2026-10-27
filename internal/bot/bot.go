@@ -34,11 +34,26 @@ func Start(token string, aiAgent *agent.Agent) {
 	})
 
 	b.Handle("/reset", func(c tele.Context) error {
-		err := aiAgent.ClearHistory(c.Chat().ID)
-		if err != nil {
-			log.Printf("Ошибка сброса истории для %d: %v", c.Chat().ID, err)
-		}
-		return c.Send("🗑 <i>Ваша история диалога в Redis полностью очищена.</i> Начнем заново!", &tele.SendOptions{ParseMode: tele.ModeHTML})
+		userID := c.Chat().ID
+		aiAgent.ClearHistory(userID)
+		aiAgent.ClearCart(userID) // Добавили очистку корзины
+
+		return c.Send("🗑 <i>Ваша корзина и история диалога очищены.</i> Начнем заново!", &tele.SendOptions{ParseMode: tele.ModeHTML})
+	})
+	b.Handle("/checkout", func(c tele.Context) error {
+		// Временный хак для теста: принудительно кладем фейковый отель в корзину перед чекаутом
+		aiAgent.UpdateCart(c.Chat().ID, &agent.TripCart{
+			City:       "Сочи",
+			Dates:      "15.08 - 22.08",
+			Guests:     2,
+			HotelName:  "Radisson Collection Paradise",
+			TotalPrice: 125000,
+			Status:     "ready",
+		})
+
+		// Вызываем генерацию чека
+		reply := aiAgent.Checkout(c.Chat().ID)
+		return c.Send(reply, &tele.SendOptions{ParseMode: tele.ModeHTML, DisableWebPagePreview: true})
 	})
 
 	b.Handle(tele.OnText, func(c tele.Context) error {
@@ -67,6 +82,7 @@ func Start(token string, aiAgent *agent.Agent) {
 		{Text: "start", Description: "Начать общение"},
 		{Text: "help", Description: "Справка"},
 		{Text: "reset", Description: "Очистить контекст и корзину"},
+		{Text: "checkout", Description: "Загрузить готовое решение"},
 	})
 
 	log.Println("🤖 Telegram-бот запущен и готов к работе")
