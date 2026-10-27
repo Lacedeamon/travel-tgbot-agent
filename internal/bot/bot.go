@@ -34,7 +34,11 @@ func Start(token string, aiAgent *agent.Agent) {
 	})
 
 	b.Handle("/reset", func(c tele.Context) error {
-		return c.Send("🗑 <i>Ваша корзина и история диалога очищены.</i> Начнем заново!", &tele.SendOptions{ParseMode: tele.ModeHTML})
+		err := aiAgent.ClearHistory(c.Chat().ID)
+		if err != nil {
+			log.Printf("Ошибка сброса истории для %d: %v", c.Chat().ID, err)
+		}
+		return c.Send("🗑 <i>Ваша история диалога в Redis полностью очищена.</i> Начнем заново!", &tele.SendOptions{ParseMode: tele.ModeHTML})
 	})
 
 	b.Handle(tele.OnText, func(c tele.Context) error {
@@ -84,7 +88,6 @@ func splitMessage(text string, limit int) []string {
 				chunks = append(chunks, strings.TrimSpace(currentChunk))
 				currentChunk = p + "\n"
 			} else {
-				// Если один абзац больше лимита (крайний случай)
 				chunks = append(chunks, string([]rune(p)[:limit]))
 				currentChunk = string([]rune(p)[limit:]) + "\n"
 			}
