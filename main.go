@@ -9,13 +9,14 @@ import (
 	"github.com/ostrovok-hackathon-2026/mr-robot/config"
 	"github.com/ostrovok-hackathon-2026/mr-robot/internal/agent"
 	"github.com/ostrovok-hackathon-2026/mr-robot/internal/bot"
+	"github.com/ostrovok-hackathon-2026/mr-robot/internal/storage/pg"
 	"github.com/ostrovok-hackathon-2026/mr-robot/internal/storage"
 )
 
 func main() {
 	cfg := config.Load()
 
-	db := storage.InitDB(cfg.DBUrl)
+	db := pg.InitDB(cfg.DBUrl)
 	defer db.Close()
 
 	redisClient := storage.InitRedis(cfg.RedisAddr)

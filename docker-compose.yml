@@ -25,7 +25,7 @@ services:
       POSTGRES_PASSWORD: app
       POSTGRES_DB: app
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -35,11 +35,26 @@ services:
       timeout: 5s
       retries: 5
 
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin4
+    restart: unless-stopped
+    ports:
+      - "18888:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@test.com
+      PGADMIN_DEFAULT_PASSWORD: password
+      PGADMIN_DISABLE_POSTFIX: "true"
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    depends_on:
+      - db
+
   redis:
     image: redis:alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
 
 volumes:
   pg_data:
-
+  pgadmin:
