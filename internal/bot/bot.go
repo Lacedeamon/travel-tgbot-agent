@@ -74,11 +74,24 @@ func Start(token string, aiAgent *agent.Agent) {
 	b.Handle(tele.OnText, func(c tele.Context) error {
 		c.Notify(tele.Typing)
 
-		reply := aiAgent.ProcessUserMessage(c.Chat().ID, c.Text())
+		res := aiAgent.Chat(c.Chat().ID, c.Text())
+		if len(res.Photos) == 2 {
+			album := tele.Album{
+				&tele.Photo{File: tele.FromURL(res.Photos[0]), Caption: res.Text},
+				&tele.Photo{File: tele.FromURL(res.Photos[1])},
+			}
+			if err := c.SendAlbum(album, &tele.SendOptions{ParseMode: tele.ModeHTML}); err != nil {
+				log.Printf("Ошибка отправки карточки заказа: %v", err)
+				return c.Send(res.Text, &tele.SendOptions{ParseMode: tele.ModeHTML})
+			}
+			return nil
+		}
+		reply := res.Text
 		reply = strings.ReplaceAll(reply, "<p>", "")
 		reply = strings.ReplaceAll(reply, "</p>", "\n")
 		reply = strings.ReplaceAll(reply, "<br>", "\n")
 		reply = strings.ReplaceAll(reply, "<br/>", "\n")
+		reply = strings.ReplaceAll(reply, "&nbsp;", "\u00a0") // Telegram не знает &nbsp;
 		reply = strings.ReplaceAll(reply, "<strong>", "<b>")
 		reply = strings.ReplaceAll(reply, "</strong>", "</b>")
 		chunks := splitMessage(reply, 4000)

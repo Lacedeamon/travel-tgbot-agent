@@ -43,12 +43,24 @@ type ChatMessage struct {
 
 const maxHistoryLength = 10 // Хранить последние 10 сообщений (5 пар вопрос-ответ); вызовы инструментов в историю не попадают
 
+// Reply — ответ агента: текст и, если оформлен заказ, фото для карточки.
+type Reply struct {
+	Text   string
+	Photos []string
+}
+
+// ProcessUserMessage возвращает только текст ответа.
 func (a *Agent) ProcessUserMessage(userID int64, text string) string {
+	return a.Chat(userID, text).Text
+}
+
+// Chat обрабатывает сообщение пользователя. Если модель оформила заказ, в ответе карточка заказа с фото.
+func (a *Agent) Chat(userID int64, text string) Reply {
 	ctx := context.Background()
 	redisKey := fmt.Sprintf("chat_history:%d", userID)
 
 	if text == "" {
-		return "Пожалуйста, отправьте текстовый запрос."
+		return Reply{Text: "Пожалуйста, отправьте текстовый запрос."}
 	}
 
 	if systemPrompt == "" {
@@ -81,11 +93,15 @@ func (a *Agent) ProcessUserMessage(userID int64, text string) string {
 		Content: text,
 	})
 
-	reply, err := runChat(ctx, a.aiClient, a.searchHotels, openaiMessages)
+	res, err := runChat(ctx, a.aiClient, toolbox{search: a.searchHotels, find: a.findHotel}, openaiMessages)
 	if err != nil {
 		log.Printf("Ошибка OpenAI: %v", err)
-		return "Извините, проблема со связью. Попробуйте позже."
+		return Reply{Text: "Извините, проблема со связью. Попробуйте позже."}
 	}
+	if res.Booked != nil {
+		return a.checkout(userID, res.Booked)
+	}
+	reply := res.Text
 
 	// 4. Сохраняем свежий диалог в Redis
 	userMsgBytes, _ := json.Marshal(ChatMessage{Role: "user", Content: text})
@@ -102,7 +118,34 @@ func (a *Agent) ProcessUserMessage(userID int64, text string) string {
 	pipe.Expire(ctx, redisKey, 24*time.Hour)
 	_, _ = pipe.Exec(ctx)
 
-	return reply
+	return Reply{Text: reply}
+}
+
+// checkout кладёт заказ в корзину и формирует карточку; Checkout заодно очищает корзину и историю.
+func (a *Agent) checkout(userID int64, b *Booking) Reply {
+	dates := fmt.Sprintf("%d ноч.", b.Nights)
+	if b.CheckIn != "" {
+		dates = fmt.Sprintf("заезд %s, %d ноч.", b.CheckIn, b.Nights)
+	}
+	err := a.UpdateCart(userID, &TripCart{
+		City:       b.Hotel.City,
+		Dates:      dates,
+		Guests:     b.Guests,
+		HotelName:  b.Hotel.Name,
+		TotalPrice: b.Total,
+		Status:     "ready",
+		Photo1:     placeholderPhotos[0],
+		Photo2:     placeholderPhotos[1],
+	})
+	if err != nil {
+		log.Printf("Ошибка сохранения корзины: %v", err)
+		return Reply{Text: "Не удалось оформить заказ, попробуйте ещё раз."}
+	}
+	return Reply{Text: a.Checkout(userID), Photos: placeholderPhotos[:]}
+}
+
+func (a *Agent) findHotel(ctx context.Context, name string) (hotels.Hotel, error) {
+	return hotels.FindByName(ctx, a.db, name)
 }
 
 func (a *Agent) searchHotels(ctx context.Context, p hotels.SearchParams) (hotels.Result, error) {
