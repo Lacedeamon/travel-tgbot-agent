@@ -9,12 +9,15 @@ import (
 	"log"
 	"time"
 
+	"github.com/ostrovok-hackathon-2026/mr-robot/internal/hotels"
 	"github.com/redis/go-redis/v9"
 	"github.com/sashabaranov/go-openai"
 )
 
 //go:embed prompt.txt
 var systemPrompt string
+
+const model = "openai/gpt-5.4-nano"
 
 type Agent struct {
 	aiClient *openai.Client
@@ -38,7 +41,7 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
-const maxHistoryLength = 10 // Хранить последние 10 сообщений (5 пар вопрос-ответ)
+const maxHistoryLength = 10 // Хранить последние 10 сообщений (5 пар вопрос-ответ); вызовы инструментов в историю не попадают
 
 func (a *Agent) ProcessUserMessage(userID int64, text string) string {
 	ctx := context.Background()
@@ -78,20 +81,11 @@ func (a *Agent) ProcessUserMessage(userID int64, text string) string {
 		Content: text,
 	})
 
-	resp, err := a.aiClient.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model:    "openai/gpt-5.4-nano",
-			Messages: openaiMessages,
-		},
-	)
-
+	reply, err := runChat(ctx, a.aiClient, a.searchHotels, openaiMessages)
 	if err != nil {
 		log.Printf("Ошибка OpenAI: %v", err)
 		return "Извините, проблема со связью. Попробуйте позже."
 	}
-
-	reply := resp.Choices[0].Message.Content
 
 	// 4. Сохраняем свежий диалог в Redis
 	userMsgBytes, _ := json.Marshal(ChatMessage{Role: "user", Content: text})
@@ -99,15 +93,20 @@ func (a *Agent) ProcessUserMessage(userID int64, text string) string {
 
 	// Пушим в список Redis
 	pipe := a.rdb.Pipeline()
-	pipe.LPush(ctx, redisKey, string(assistantMsgBytes))
+	// Голова списка — самое новое, поэтому ответ пушим после вопроса: при чтении (с разворотом) пара идёт «вопрос, ответ».
 	pipe.LPush(ctx, redisKey, string(userMsgBytes))
+	pipe.LPush(ctx, redisKey, string(assistantMsgBytes))
 	// Ограничиваем длину истории, чтобы не забивать память и контекст
-	pipe.LTrim(ctx, redisKey, 0, int64(maxHistoryLength*2-1))
+	pipe.LTrim(ctx, redisKey, 0, int64(maxHistoryLength-1))
 	// Устанавливаем TTL (например, сутки, чтобы мусор не копился)
 	pipe.Expire(ctx, redisKey, 24*time.Hour)
 	_, _ = pipe.Exec(ctx)
 
 	return reply
+}
+
+func (a *Agent) searchHotels(ctx context.Context, p hotels.SearchParams) (hotels.Result, error) {
+	return hotels.SearchRelaxed(ctx, a.db, p)
 }
 
 // Метод для очистки истории (привяжем к команде /reset)
