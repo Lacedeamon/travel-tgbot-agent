@@ -27,8 +27,10 @@ func Start(token string, aiAgent *agent.Agent) {
 
 	b.Handle("/help", func(c tele.Context) error {
 		helpText := "<b>Как со мной общаться:</b>\n\n" +
-			"Просто напиши мне своими словами, куда хочешь поехать, какой бюджет и кто едет. " +
-			"Например: <i>«Хочу в Сочи на неделю вдвоем, бюджет 100 тысяч»</i>.\n\n" +
+			"Просто напиши мне своими словами, какой отдых хочешь, какой бюджет и кто едет. " +
+			"Например: <i>«Хочу к морю в Турции на неделю вдвоем, бюджет 100 тысяч»</i>. " +
+			"Я подберу один лучший отель, а когда согласишься, оформлю заказ. Условия можно менять в любой момент.\n\n" +
+			"/checkout — показать карточку последнего заказа.\n" +
 			"/reset — очистить историю диалога и начать заново."
 		return c.Send(helpText, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	})
@@ -41,33 +43,14 @@ func Start(token string, aiAgent *agent.Agent) {
 		return c.Send("🗑 <i>Ваша корзина и история диалога очищены.</i> Начнем заново!", &tele.SendOptions{ParseMode: tele.ModeHTML})
 	})
 	b.Handle("/checkout", func(c tele.Context) error {
-		aiAgent.UpdateCart(c.Chat().ID, &agent.TripCart{
-			City:       "Сочи",
-			Dates:      "15.08 - 22.08",
-			Guests:     2,
-			HotelName:  "Radisson Collection Paradise",
-			TotalPrice: 125000,
-			Status:     "ready",
-			Photo1:     "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&q=80",
-			Photo2:     "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&q=80",
-		})
-
-		cart, _ := aiAgent.GetCart(c.Chat().ID)
-
-		summary := aiAgent.Checkout(c.Chat().ID)
-
-		// 4. Формируем красивый альбом из двух фото
-		album := tele.Album{
-			&tele.Photo{
-				File:    tele.FromURL(cart.Photo1),
-				Caption: summary, // Текст прикрепляется только к первому фото
-			},
-			&tele.Photo{
-				File: tele.FromURL(cart.Photo2),
-			},
+		card, ok := aiAgent.OrderCard(c.Chat().ID)
+		if !ok {
+			return c.Send(card.Text)
 		}
-
-		// 5. Отправляем альбом пользователю с параметрами разметки
+		album := tele.Album{
+			&tele.Photo{File: tele.FromURL(card.Photos[0]), Caption: card.Text}, // Текст прикрепляется только к первому фото
+			&tele.Photo{File: tele.FromURL(card.Photos[1])},
+		}
 		return c.SendAlbum(album, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	})
 
@@ -109,7 +92,7 @@ func Start(token string, aiAgent *agent.Agent) {
 		{Text: "start", Description: "Начать общение"},
 		{Text: "help", Description: "Справка"},
 		{Text: "reset", Description: "Очистить контекст и корзину"},
-		{Text: "checkout", Description: "Загрузить готовое решение"},
+		{Text: "checkout", Description: "Карточка последнего заказа"},
 	})
 
 	log.Println("🤖 Telegram-бот запущен и готов к работе")

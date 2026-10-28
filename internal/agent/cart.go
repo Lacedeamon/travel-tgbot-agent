@@ -79,6 +79,17 @@ func (a *Agent) Checkout(userID int64) string {
 	return summary
 }
 
+// OrderCard заново формирует карточку заказа по текущей корзине, ничего не очищая.
+// Второе значение false, если в корзине ещё нет отеля.
+func (a *Agent) OrderCard(userID int64) (Reply, bool) {
+	cart, _ := a.GetCart(userID)
+	if cart.HotelName == "" || cart.TotalPrice == 0 {
+		return Reply{Text: "В вашей корзине пока нет выбранного отеля. Давайте сначала подберем вариант!"}, false
+	}
+	summary, _ := renderCheckout(cart)
+	return Reply{Text: summary, Photos: []string{cart.Photo1, cart.Photo2}}, true
+}
+
 // renderCheckout собирает карточку заказа и возвращает её вместе с номером заказа; ничего не очищает.
 func renderCheckout(cart *TripCart) (summary, orderID string) {
 	// Генерируем фейковый номер заказа
