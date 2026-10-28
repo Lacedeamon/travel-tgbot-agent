@@ -41,7 +41,6 @@ func Start(token string, aiAgent *agent.Agent) {
 		return c.Send("🗑 <i>Ваша корзина и история диалога очищены.</i> Начнем заново!", &tele.SendOptions{ParseMode: tele.ModeHTML})
 	})
 	b.Handle("/checkout", func(c tele.Context) error {
-		// Временный хак для теста: принудительно кладем фейковый отель в корзину перед чекаутом
 		aiAgent.UpdateCart(c.Chat().ID, &agent.TripCart{
 			City:       "Сочи",
 			Dates:      "15.08 - 22.08",
@@ -49,11 +48,27 @@ func Start(token string, aiAgent *agent.Agent) {
 			HotelName:  "Radisson Collection Paradise",
 			TotalPrice: 125000,
 			Status:     "ready",
+			Photo1:     "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&q=80",
+			Photo2:     "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&q=80",
 		})
 
-		// Вызываем генерацию чека
-		reply := aiAgent.Checkout(c.Chat().ID)
-		return c.Send(reply, &tele.SendOptions{ParseMode: tele.ModeHTML, DisableWebPagePreview: true})
+		cart, _ := aiAgent.GetCart(c.Chat().ID)
+
+		summary := aiAgent.Checkout(c.Chat().ID)
+
+		// 4. Формируем красивый альбом из двух фото
+		album := tele.Album{
+			&tele.Photo{
+				File:    tele.FromURL(cart.Photo1),
+				Caption: summary, // Текст прикрепляется только к первому фото
+			},
+			&tele.Photo{
+				File: tele.FromURL(cart.Photo2),
+			},
+		}
+
+		// 5. Отправляем альбом пользователю с параметрами разметки
+		return c.SendAlbum(album, &tele.SendOptions{ParseMode: tele.ModeHTML})
 	})
 
 	b.Handle(tele.OnText, func(c tele.Context) error {

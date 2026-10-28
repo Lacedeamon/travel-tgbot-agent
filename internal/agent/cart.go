@@ -15,7 +15,9 @@ type TripCart struct {
 	Guests     int    `json:"guests"`
 	HotelName  string `json:"hotel_name"`
 	TotalPrice int    `json:"total_price"`
-	Status     string `json:"status"` // planning, ready, booked
+	Status     string `json:"status"`  // planning, ready, booked
+	Photo1     string `json:"photo_1"` // Ссылка на фасад
+	Photo2     string `json:"photo_2"` // Ссылка на номер
 }
 
 func (a *Agent) getCartKey(userID int64) string {
