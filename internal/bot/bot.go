@@ -75,25 +75,24 @@ func Start(token string, aiAgent *agent.Agent) {
 		c.Notify(tele.Typing)
 
 		res := aiAgent.Chat(c.Chat().ID, c.Text())
-		if len(res.Photos) == 2 {
-			album := tele.Album{
-				&tele.Photo{File: tele.FromURL(res.Photos[0]), Caption: res.Text},
-				&tele.Photo{File: tele.FromURL(res.Photos[1])},
+		reply := normalizeHTML(res.Text)
+
+		// Подпись к фото ограничена 1024 символами: длинный ответ идёт отдельным сообщением после альбома.
+		if len(res.Photos) >= 2 {
+			album := make(tele.Album, len(res.Photos))
+			for i, url := range res.Photos {
+				album[i] = &tele.Photo{File: tele.FromURL(url)}
+			}
+			caption := len([]rune(reply)) <= captionLimit
+			if caption {
+				album[0].(*tele.Photo).Caption = reply
 			}
 			if err := c.SendAlbum(album, &tele.SendOptions{ParseMode: tele.ModeHTML}); err != nil {
-				log.Printf("Ошибка отправки карточки заказа: %v", err)
-				return c.Send(res.Text, &tele.SendOptions{ParseMode: tele.ModeHTML})
+				log.Printf("Ошибка отправки фото: %v", err)
+			} else if caption {
+				return nil
 			}
-			return nil
 		}
-		reply := res.Text
-		reply = strings.ReplaceAll(reply, "<p>", "")
-		reply = strings.ReplaceAll(reply, "</p>", "\n")
-		reply = strings.ReplaceAll(reply, "<br>", "\n")
-		reply = strings.ReplaceAll(reply, "<br/>", "\n")
-		reply = strings.ReplaceAll(reply, "&nbsp;", "\u00a0") // Telegram не знает &nbsp;
-		reply = strings.ReplaceAll(reply, "<strong>", "<b>")
-		reply = strings.ReplaceAll(reply, "</strong>", "</b>")
 		chunks := splitMessage(reply, 4000)
 
 		for _, chunk := range chunks {
@@ -115,6 +114,19 @@ func Start(token string, aiAgent *agent.Agent) {
 
 	log.Println("🤖 Telegram-бот запущен и готов к работе")
 	b.Start()
+}
+
+const captionLimit = 1024
+
+// normalizeHTML приводит HTML от LLM к тому подмножеству, которое понимает Telegram.
+func normalizeHTML(s string) string {
+	s = strings.ReplaceAll(s, "<p>", "")
+	s = strings.ReplaceAll(s, "</p>", "\n")
+	s = strings.ReplaceAll(s, "<br>", "\n")
+	s = strings.ReplaceAll(s, "<br/>", "\n")
+	s = strings.ReplaceAll(s, "&nbsp;", "\u00a0") // Telegram не знает &nbsp;
+	s = strings.ReplaceAll(s, "<strong>", "<b>")
+	return strings.ReplaceAll(s, "</strong>", "</b>")
 }
 
 func splitMessage(text string, limit int) []string {

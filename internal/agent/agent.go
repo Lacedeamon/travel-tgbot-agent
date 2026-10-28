@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/ostrovok-hackathon-2026/mr-robot/internal/hotels"
@@ -102,6 +103,7 @@ func (a *Agent) Chat(userID int64, text string) Reply {
 		return a.checkout(userID, res.Booked)
 	}
 	reply := res.Text
+	photos := shownPhotos(res.Shown, reply)
 
 	// 4. Сохраняем свежий диалог в Redis
 	userMsgBytes, _ := json.Marshal(ChatMessage{Role: "user", Content: text})
@@ -118,7 +120,7 @@ func (a *Agent) Chat(userID int64, text string) Reply {
 	pipe.Expire(ctx, redisKey, 24*time.Hour)
 	_, _ = pipe.Exec(ctx)
 
-	return Reply{Text: reply}
+	return Reply{Text: reply, Photos: photos}
 }
 
 // checkout кладёт заказ в корзину и формирует карточку; Checkout заодно очищает корзину и историю.
@@ -127,6 +129,10 @@ func (a *Agent) checkout(userID int64, b *Booking) Reply {
 	if b.CheckIn != "" {
 		dates = fmt.Sprintf("заезд %s, %d ноч.", b.CheckIn, b.Nights)
 	}
+	photos := b.Hotel.PhotoURLs
+	for i := len(photos); i < len(placeholderPhotos); i++ {
+		photos = append(photos[:i:i], placeholderPhotos[i])
+	}
 	err := a.UpdateCart(userID, &TripCart{
 		City:       b.Hotel.City,
 		Dates:      dates,
@@ -134,14 +140,28 @@ func (a *Agent) checkout(userID int64, b *Booking) Reply {
 		HotelName:  b.Hotel.Name,
 		TotalPrice: b.Total,
 		Status:     "ready",
-		Photo1:     placeholderPhotos[0],
-		Photo2:     placeholderPhotos[1],
+		Photo1:     photos[0],
+		Photo2:     photos[1],
 	})
 	if err != nil {
 		log.Printf("Ошибка сохранения корзины: %v", err)
 		return Reply{Text: "Не удалось оформить заказ, попробуйте ещё раз."}
 	}
-	return Reply{Text: a.Checkout(userID), Photos: placeholderPhotos[:]}
+	return Reply{Text: a.Checkout(userID), Photos: photos[:2]}
+}
+
+// maxReplyPhotos — сколько фото отеля прикладываем к ответу.
+const maxReplyPhotos = 3
+
+// shownPhotos возвращает фото отеля из поиска, если ответ модели действительно про него.
+func shownPhotos(h *hotels.Hotel, reply string) []string {
+	if h == nil || len(h.PhotoURLs) == 0 || !strings.Contains(reply, h.Name) {
+		return nil
+	}
+	if len(h.PhotoURLs) > maxReplyPhotos {
+		return h.PhotoURLs[:maxReplyPhotos]
+	}
+	return h.PhotoURLs
 }
 
 func (a *Agent) findHotel(ctx context.Context, name string) (hotels.Hotel, error) {

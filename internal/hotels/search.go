@@ -63,6 +63,7 @@ type Hotel struct {
 	BeachMinutes  sql.NullInt16
 	BeachOnFoot   sql.NullBool
 	KidsFriendly  bool
+	PhotoURLs     []string
 }
 
 // MaxPricePerNight возвращает потолок цены за ночь; 0, если бюджет или число ночей не заданы.
@@ -100,7 +101,7 @@ func (p SearchParams) boolFilters() []struct {
 }
 
 const selectColumns = `id, city, name, rating, stars, price_per_night_rub, google_url, official_site,
-	all_inclusive, pool, beachfront, beach_minutes, beach_on_foot, kids_friendly`
+	all_inclusive, pool, beachfront, beach_minutes, beach_on_foot, kids_friendly, photo_urls`
 
 // buildQuery собирает SQL и аргументы; значения подставляются только через плейсхолдеры.
 func buildQuery(p SearchParams) (string, []any) {
@@ -190,7 +191,7 @@ func search(ctx context.Context, db *sql.DB, p SearchParams) ([]Hotel, error) {
 		var h Hotel
 		if err = rows.Scan(&h.ID, &h.City, &h.Name, &h.Rating, &h.Stars, &h.PricePerNight,
 			&h.GoogleURL, &h.OfficialSite, &h.AllInclusive, &h.Pool, &h.Beachfront,
-			&h.BeachMinutes, &h.BeachOnFoot, &h.KidsFriendly); err != nil {
+			&h.BeachMinutes, &h.BeachOnFoot, &h.KidsFriendly, pq.Array(&h.PhotoURLs)); err != nil {
 			return nil, fmt.Errorf("scan hotel: %w", err)
 		}
 		res = append(res, h)

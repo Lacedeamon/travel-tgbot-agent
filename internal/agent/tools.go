@@ -38,14 +38,17 @@ type Booking struct {
 }
 
 // chatResult — итог диалога с моделью: либо текст, либо оформленный заказ.
+// Shown — отель из последнего поиска; по нему агент подбирает фото к ответу.
 type chatResult struct {
 	Text   string
 	Booked *Booking
+	Shown  *hotels.Hotel
 }
 
 // runChat гоняет диалог с моделью, пока она вызывает инструменты, и возвращает итоговый текст.
 func runChat(ctx context.Context, client chatCompleter, box toolbox, messages []openai.ChatCompletionMessage) (chatResult, error) {
 	tools := []openai.Tool{hotels.Tool(), hotels.BookTool()}
+	var shown *hotels.Hotel
 
 	for round := 0; ; round++ {
 		req := openai.ChatCompletionRequest{Model: model, Messages: messages}
@@ -63,12 +66,15 @@ func runChat(ctx context.Context, client chatCompleter, box toolbox, messages []
 
 		msg := resp.Choices[0].Message
 		if len(msg.ToolCalls) == 0 {
-			return chatResult{Text: msg.Content}, nil
+			return chatResult{Text: msg.Content, Shown: shown}, nil
 		}
 
 		messages = append(messages, msg)
 		for _, call := range msg.ToolCalls {
-			out, booking := runTool(ctx, box, call)
+			out, booking, found := runTool(ctx, box, call)
+			if found != nil {
+				shown = found
+			}
 			if booking != nil {
 				// Заказ оформлен: карточку покажет сервис, модель больше не нужна.
 				return chatResult{Booked: booking}, nil
@@ -84,31 +90,37 @@ func runChat(ctx context.Context, client chatCompleter, box toolbox, messages []
 
 // runTool выполняет один вызов инструмента. Любая ошибка возвращается модели как JSON,
 // чтобы она могла уточнить данные у пользователя или объяснить, что пошло не так.
-// Второе значение не nil, только если заказ оформлен.
-func runTool(ctx context.Context, box toolbox, call openai.ToolCall) (string, *Booking) {
+// Booking не nil, только если заказ оформлен; отель не nil, если поиск вернул отель.
+func runTool(ctx context.Context, box toolbox, call openai.ToolCall) (string, *Booking, *hotels.Hotel) {
 	log.Printf("Вызов инструмента %s: %s", call.Function.Name, call.Function.Arguments)
 
 	switch call.Function.Name {
 	case hotels.ToolName:
-		return runSearch(ctx, box, call), nil
+		out, found := runSearch(ctx, box, call)
+		return out, nil, found
 	case hotels.BookToolName:
-		return runBook(ctx, box, call)
+		out, booking := runBook(ctx, box, call)
+		return out, booking, nil
 	}
-	return toolError("неизвестный инструмент " + call.Function.Name), nil
+	return toolError("неизвестный инструмент " + call.Function.Name), nil, nil
 }
 
-func runSearch(ctx context.Context, box toolbox, call openai.ToolCall) string {
+func runSearch(ctx context.Context, box toolbox, call openai.ToolCall) (string, *hotels.Hotel) {
 	params, err := hotels.ParseArgs(call.Function.Arguments)
 	if err != nil {
-		return toolError(err.Error())
+		return toolError(err.Error()), nil
 	}
 
 	res, err := box.search(ctx, params)
 	if err != nil {
 		log.Printf("Ошибка поиска отелей: %v", err)
-		return toolError("поиск временно недоступен")
+		return toolError("поиск временно недоступен"), nil
 	}
-	return hotels.ResultJSON(res)
+	var found *hotels.Hotel
+	if len(res.Hotels) > 0 {
+		found = &res.Hotels[0]
+	}
+	return hotels.ResultJSON(res), found
 }
 
 func runBook(ctx context.Context, box toolbox, call openai.ToolCall) (string, *Booking) {

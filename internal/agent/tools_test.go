@@ -142,7 +142,7 @@ func TestRunChatStopsAfterMaxRounds(t *testing.T) {
 }
 
 func TestRunToolUnknown(t *testing.T) {
-	out, _ := runTool(context.Background(), toolbox{search: emptySearch(nil)}, openai.ToolCall{Function: openai.FunctionCall{Name: "drop_tables"}})
+	out, _, _ := runTool(context.Background(), toolbox{search: emptySearch(nil)}, openai.ToolCall{Function: openai.FunctionCall{Name: "drop_tables"}})
 	if !strings.Contains(out, "error") {
 		t.Errorf("out = %s", out)
 	}
@@ -220,5 +220,19 @@ func TestRunChatBookingRequiresCheckIn(t *testing.T) {
 	msgs := c.reqs[1].Messages
 	if last := msgs[len(msgs)-1].Content; !strings.Contains(last, "check_in") {
 		t.Errorf("модель должна получить ошибку про check_in: %s", last)
+	}
+}
+
+func TestShownPhotos(t *testing.T) {
+	h := &hotels.Hotel{Name: "Crystal Centro", PhotoURLs: []string{"a", "b", "c", "d"}}
+
+	if got := shownPhotos(h, "Рекомендую Crystal Centro"); len(got) != maxReplyPhotos {
+		t.Errorf("фото = %v, ожидали %d", got, maxReplyPhotos)
+	}
+	if got := shownPhotos(h, "Назовите бюджет"); got != nil {
+		t.Errorf("ответ не про отель, фото не нужны: %v", got)
+	}
+	if got := shownPhotos(nil, "Crystal Centro"); got != nil {
+		t.Errorf("без отеля фото нет: %v", got)
 	}
 }

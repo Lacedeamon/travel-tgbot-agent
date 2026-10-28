@@ -20,7 +20,7 @@ type TripCart struct {
 	Photo2     string `json:"photo_2"` // Ссылка на номер
 }
 
-// Пока в базе нет фото отелей, в карточке заказа показываем заглушки.
+// Заглушки на случай, если у отеля в базе нет фото.
 var placeholderPhotos = [2]string{
 	"https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&q=80",
 	"https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&q=80",

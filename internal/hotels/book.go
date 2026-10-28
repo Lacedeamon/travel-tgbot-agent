@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lib/pq"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -83,7 +84,7 @@ func FindByName(ctx context.Context, db *sql.DB, name string) (Hotel, error) {
 		"SELECT "+selectColumns+" FROM hotels WHERE lower(name) = lower($1) ORDER BY id LIMIT 1", name).
 		Scan(&h.ID, &h.City, &h.Name, &h.Rating, &h.Stars, &h.PricePerNight,
 			&h.GoogleURL, &h.OfficialSite, &h.AllInclusive, &h.Pool, &h.Beachfront,
-			&h.BeachMinutes, &h.BeachOnFoot, &h.KidsFriendly)
+			&h.BeachMinutes, &h.BeachOnFoot, &h.KidsFriendly, pq.Array(&h.PhotoURLs))
 	if errors.Is(err, sql.ErrNoRows) {
 		return h, ErrHotelNotFound
 	}
