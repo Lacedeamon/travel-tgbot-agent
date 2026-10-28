@@ -77,3 +77,10 @@ func TestBuildQueryNoInjection(t *testing.T) {
 		t.Errorf("args = %v", args)
 	}
 }
+
+func TestBuildQueryExclude(t *testing.T) {
+	q, args := buildQuery(SearchParams{Exclude: []string{"A"}})
+	if !strings.Contains(q, "NOT (name = ANY($1))") || len(args) != 2 {
+		t.Errorf("q = %s, args = %v", q, args)
+	}
+}

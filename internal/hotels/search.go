@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
-const defaultLimit = 5
+const defaultLimit = 1
 
 // SearchParams описывает запрос на подбор отелей. Нулевое значение поля означает «не фильтровать».
 type SearchParams struct {
@@ -40,6 +42,8 @@ type SearchParams struct {
 	FreeWifi      bool
 	Kitchen       bool
 	Restaurant    bool
+
+	Exclude []string // названия отелей, которые пользователь уже видел
 
 	Limit int
 }
@@ -128,6 +132,9 @@ func buildQuery(p SearchParams) (string, []any) {
 	if p.MaxBeachMinutes > 0 {
 		conds = append(conds, "beach_minutes <= "+arg(p.MaxBeachMinutes))
 	}
+	if len(p.Exclude) > 0 {
+		conds = append(conds, "NOT (name = ANY("+arg(pq.Array(p.Exclude))+"))")
+	}
 	if p.NearBeach {
 		conds = append(conds, "(beachfront OR beach_on_foot)")
 	}
@@ -150,7 +157,7 @@ func buildQuery(p SearchParams) (string, []any) {
 	if p.WithChildren {
 		order = "kids_friendly DESC, "
 	}
-	q += " ORDER BY " + order + "rating DESC NULLS LAST, price_per_night_rub ASC, id LIMIT " + arg(limit)
+	q += " ORDER BY " + order + "stars DESC NULLS LAST, rating DESC NULLS LAST, price_per_night_rub DESC, id LIMIT " + arg(limit)
 	return q, args
 }
 
@@ -164,7 +171,7 @@ func (p SearchParams) expand() SearchParams {
 	return p
 }
 
-// SearchHotels возвращает отели, подходящие под все заданные фильтры, лучшие по рейтингу первыми.
+// SearchHotels возвращает отели, подходящие под все заданные фильтры, самые статусные первыми: больше звёзд, затем выше рейтинг, затем дороже (в рамках бюджета).
 func SearchHotels(ctx context.Context, db *sql.DB, p SearchParams) ([]Hotel, error) {
 	return search(ctx, db, p.expand())
 }

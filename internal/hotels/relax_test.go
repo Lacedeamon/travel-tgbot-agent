@@ -18,7 +18,7 @@ func TestExpandWithChildren(t *testing.T) {
 
 func TestBuildQueryWithChildren(t *testing.T) {
 	q, _ := buildQuery(SearchParams{WithChildren: true}.expand())
-	for _, want := range []string{"all_inclusive", "pool", "(beachfront OR beach_on_foot)", "ORDER BY kids_friendly DESC, rating"} {
+	for _, want := range []string{"all_inclusive", "pool", "(beachfront OR beach_on_foot)", "ORDER BY kids_friendly DESC, stars"} {
 		if !strings.Contains(q, want) {
 			t.Errorf("в запросе нет %q:\n%s", want, q)
 		}

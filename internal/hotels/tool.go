@@ -26,6 +26,7 @@ type toolArgs struct {
 	Cities          []string `json:"cities"`
 	Nights          int      `json:"nights"`
 	HotelBudgetRub  int      `json:"hotel_budget_rub"`
+	ExcludeHotels   []string `json:"exclude_hotels"`
 	MinStars        int      `json:"min_stars"`
 	MinRating       float64  `json:"min_rating"`
 	MaxBeachMinutes int      `json:"max_beach_minutes"`
@@ -59,7 +60,7 @@ func Tool() openai.Tool {
 		Type: openai.ToolTypeFunction,
 		Function: &openai.FunctionDefinition{
 			Name: ToolName,
-			Description: "Подбирает отели из базы по условиям пользователя. Возвращает до 5 отелей, лучшие по рейтингу первыми, " +
+			Description: "Подбирает отели из базы по условиям пользователя. Возвращает ОДИН самый подходящий отель: с максимумом звёзд и лучшим рейтингом, а при равенстве самый дорогой из тех, что укладываются в бюджет. Чтобы показать другой вариант, передай уже показанные в exclude_hotels. " +
 				"и список фильтров, которые пришлось ослабить, чтобы найти варианты. " +
 				"Передавай только то, что пользователь назвал или что прямо следует из его слов; остальные параметры не указывай. " +
 				"Вызывай инструмент, как только известны хотя бы город и примерный бюджет с числом ночей. " +
@@ -72,6 +73,11 @@ func Tool() openai.Tool {
 						"type":        "array",
 						"items":       map[string]any{"type": "string", "enum": cities},
 						"description": "Города поиска. Если пользователь не назвал город, укажи все подходящие под его пожелания или не передавай параметр.",
+					},
+					"exclude_hotels": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "Названия отелей, которые уже показаны пользователю и не подошли. Передавай, только если он просит другой вариант.",
 					},
 					"nights": map[string]any{
 						"type":        "integer",
@@ -159,6 +165,7 @@ func ParseArgs(raw string) (SearchParams, error) {
 	return SearchParams{
 		Cities:          cities,
 		Budget:          a.HotelBudgetRub,
+		Exclude:         a.ExcludeHotels,
 		Nights:          a.Nights,
 		MinStars:        a.MinStars,
 		MinRating:       a.MinRating,
