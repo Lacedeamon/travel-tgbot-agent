@@ -42,7 +42,7 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
-const maxHistoryLength = 10 // Хранить последние 10 сообщений (5 пар вопрос-ответ); вызовы инструментов в историю не попадают
+const maxHistoryLength = 20 // Хранить последние 20 сообщений (10 пар вопрос-ответ); вызовы инструментов в историю не попадают
 
 // Reply — ответ агента: текст и, если оформлен заказ, фото для карточки.
 type Reply struct {
@@ -100,14 +100,24 @@ func (a *Agent) Chat(userID int64, text string) Reply {
 		return Reply{Text: "Извините, проблема со связью. Попробуйте позже."}
 	}
 	if res.Booked != nil {
-		return a.checkout(userID, res.Booked)
+		out := a.checkout(userID, res.Booked)
+		// Диалог не очищаем: пользователь может в любой момент поменять даты, срок, бюджет или отель.
+		a.remember(ctx, redisKey, text, out.Note)
+		return out.Reply
 	}
 	reply := res.Text
 	photos := shownPhotos(res.Shown, reply)
 
+	a.remember(ctx, redisKey, text, reply)
+
+	return Reply{Text: reply, Photos: photos}
+}
+
+// remember сохраняет пару «вопрос, ответ» в историю диалога.
+func (a *Agent) remember(ctx context.Context, redisKey, question, answer string) {
 	// 4. Сохраняем свежий диалог в Redis
-	userMsgBytes, _ := json.Marshal(ChatMessage{Role: "user", Content: text})
-	assistantMsgBytes, _ := json.Marshal(ChatMessage{Role: "assistant", Content: reply})
+	userMsgBytes, _ := json.Marshal(ChatMessage{Role: "user", Content: question})
+	assistantMsgBytes, _ := json.Marshal(ChatMessage{Role: "assistant", Content: answer})
 
 	// Пушим в список Redis
 	pipe := a.rdb.Pipeline()
@@ -119,12 +129,17 @@ func (a *Agent) Chat(userID int64, text string) Reply {
 	// Устанавливаем TTL (например, сутки, чтобы мусор не копился)
 	pipe.Expire(ctx, redisKey, 24*time.Hour)
 	_, _ = pipe.Exec(ctx)
-
-	return Reply{Text: reply, Photos: photos}
 }
 
-// checkout кладёт заказ в корзину и формирует карточку; Checkout заодно очищает корзину и историю.
-func (a *Agent) checkout(userID int64, b *Booking) Reply {
+// orderOutcome — результат оформления: ответ пользователю и заметка для истории диалога.
+type orderOutcome struct {
+	Reply Reply
+	Note  string
+}
+
+// checkout кладёт заказ в корзину и формирует карточку. В отличие от Checkout, историю не очищает:
+// заметка о заказе остаётся в диалоге, чтобы модель могла менять параметры («тот же отель, но на 5 ночей»).
+func (a *Agent) checkout(userID int64, b *Booking) orderOutcome {
 	dates := fmt.Sprintf("%d ноч.", b.Nights)
 	if b.CheckIn != "" {
 		dates = fmt.Sprintf("заезд %s, %d ноч.", b.CheckIn, b.Nights)
@@ -133,7 +148,7 @@ func (a *Agent) checkout(userID int64, b *Booking) Reply {
 	for i := len(photos); i < len(placeholderPhotos); i++ {
 		photos = append(photos[:i:i], placeholderPhotos[i])
 	}
-	err := a.UpdateCart(userID, &TripCart{
+	cart := &TripCart{
 		City:       b.Hotel.City,
 		Dates:      dates,
 		Guests:     b.Guests,
@@ -142,12 +157,16 @@ func (a *Agent) checkout(userID int64, b *Booking) Reply {
 		Status:     "ready",
 		Photo1:     photos[0],
 		Photo2:     photos[1],
-	})
-	if err != nil {
-		log.Printf("Ошибка сохранения корзины: %v", err)
-		return Reply{Text: "Не удалось оформить заказ, попробуйте ещё раз."}
 	}
-	return Reply{Text: a.Checkout(userID), Photos: photos[:2]}
+	if err := a.UpdateCart(userID, cart); err != nil {
+		log.Printf("Ошибка сохранения корзины: %v", err)
+		msg := "Не удалось оформить заказ, попробуйте ещё раз."
+		return orderOutcome{Reply: Reply{Text: msg}, Note: msg}
+	}
+	summary, orderID := renderCheckout(cart)
+	note := fmt.Sprintf("Заказ %s оформлен: отель %s (%s), %s, гостей %d, %d ₽ за ночь, итого %d ₽. Карточку заказа пользователь получил. Он может в любой момент изменить даты, срок, число гостей, бюджет или отель.",
+		orderID, b.Hotel.Name, b.Hotel.City, dates, b.Guests, b.Hotel.PricePerNight, b.Total)
+	return orderOutcome{Reply: Reply{Text: summary, Photos: photos[:2]}, Note: note}
 }
 
 // maxReplyPhotos — сколько фото отеля прикладываем к ответу.

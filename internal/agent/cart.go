@@ -70,10 +70,21 @@ func (a *Agent) Checkout(userID int64) string {
 		return "В вашей корзине пока нет выбранного отеля. Давайте сначала подберем вариант!"
 	}
 
-	// Генерируем фейковый номер заказа
-	orderID := fmt.Sprintf("OST-2026-%d", rand.Intn(90000)+10000)
+	summary, _ := renderCheckout(cart)
 
-	summary := fmt.Sprintf("🎉 <b>Бронирование почти завершено!</b>\n\n"+
+	// Очищаем корзину и историю после успешного оформления, чтобы начать с чистого листа
+	a.ClearCart(userID)
+	a.ClearHistory(userID)
+
+	return summary
+}
+
+// renderCheckout собирает карточку заказа и возвращает её вместе с номером заказа; ничего не очищает.
+func renderCheckout(cart *TripCart) (summary, orderID string) {
+	// Генерируем фейковый номер заказа
+	orderID = fmt.Sprintf("OST-2026-%d", rand.Intn(90000)+10000)
+
+	summary = fmt.Sprintf("🎉 <b>Бронирование почти завершено!</b>\n\n"+
 		"🧾 <b>Номер заказа:</b> %s\n"+
 		"🏨 <b>Отель:</b> %s\n"+
 		"📍 <b>Локация:</b> %s\n"+
@@ -84,10 +95,5 @@ func (a *Agent) Checkout(userID int64) string {
 		"<a href='https://ostrovok.ru/pay/%s'>Перейти к оплате</a>\n\n"+
 		"<i>Спасибо, что доверяете свой отдых Островку!</i> 🌴",
 		orderID, cart.HotelName, cart.City, cart.Dates, cart.Guests, cart.TotalPrice, orderID)
-
-	// Очищаем корзину и историю после успешного оформления, чтобы начать с чистого листа
-	a.ClearCart(userID)
-	a.ClearHistory(userID)
-
-	return summary
+	return summary, orderID
 }
